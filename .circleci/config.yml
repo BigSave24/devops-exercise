@@ -1,0 +1,95 @@
+version: 2.1
+
+executors:
+  python:
+    docker:
+      - image: circleci/3.9.3-alpine
+
+jobs:
+  Setup-environment:
+    docker:
+      - image: python:3.9.3-alpine
+
+    steps:
+      - checkout
+      - run:
+         name: setup venv enviroment
+         command: |
+          python -m venv ~/.thingsapp
+          source ~/.thingsapp/bin/activate
+
+      - run:
+          name: update pip
+          command: |
+            pip install --upgrade pip
+
+      - save_cache:
+          paths:
+            - "~/.thingsapp"
+          key: v1-py-thngs-{{ checksum poetry.lock }}
+ 
+  Build-docker-image:
+    executor: python:3.9.3-alpine
+
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-py-thngs-{{ checksum poetry.lock }}
+      
+      - run:
+          name: build docker file
+          command: |
+            docker login -u $DOCKER_USERNAME --password-stdin
+            docker build -t thingsapp .
+            docker tag thingsapp:latest $REGISTRYHOST/thingsapp:latest
+
+      - save_cache:
+          paths:
+            - "~/.thingsapp"
+          key: v1-py-thngs-{{ checksum poetry.lock }}
+    
+  Test-container-build:
+    docker:
+      - image: $REGISTRYHOST/thingsapp:latest
+
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-py-thngs-{{ checksum poetry.lock }}
+      
+      - run:
+          name: test container app
+          command: |
+            python -m pytest tests.py
+
+      - save_cache:
+          paths:
+            - "~/.thingsapp"
+          key: v1-py-thngs-{{ checksum poetry.lock }}
+
+    
+  # Scan-container-build-security:
+    # Run vulnerabilty scans against container image
+
+  # Push-docker-image-Prod-Repository:
+    # Push image build to repository for production images
+
+  # Deploy-to-kubernetes-staging:
+    # Deploy image to staging kubernetes cluster
+
+  # Deploy-to-kubernetes-production:
+    # Rollout image in staging environment to production using a deployment strategy
+
+workflows:
+  python-things-app:
+    jobs:
+      - Setup-environment
+      - Build-docker-image:
+          requires: [Setup-environment]
+      - Test-container-build
+      - Scan-container-build-security
+      - Push-docker-image-Prod-Repository
+      - Deploy-to-kubernetes-staging
+      - Deploy-to-kubernetes-production
